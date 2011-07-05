@@ -23,6 +23,7 @@ SNIPPET_CONTENT_FILE = 'content.html'
 
 config = ConfigParser.ConfigParser()
 config.read('.snippetconfig')
+database_present = config.has_section('Database')
 
 @task
 def monitor_build_push():
@@ -63,18 +64,19 @@ def push_to_db():
     to the specified database
     """
 
-    with open(BUILD_OUT_FILE, 'r') as snippet:
-        db_type = config.get('Database', 'db_type')
+    if (database_present):
+        with open(BUILD_OUT_FILE, 'r') as snippet:
+            db_type = config.get('Database', 'db_type')
 
-        if db_type == 'sqlite3':
-            conn = sqlite3.connect(config.get('Database', 'db_path'))
-            conn.execute("""
-                UPDATE homesnippets_snippet
-                SET body=?
-                WHERE id=?
-            """, (snippet.read(), config.get('Database', 'snippet_id')))
-            conn.commit()
-            conn.close()
+            if db_type == 'sqlite3':
+                conn = sqlite3.connect(config.get('Database', 'db_path'))
+                conn.execute("""
+                    UPDATE homesnippets_snippet
+                    SET body=?
+                    WHERE id=?
+                """, (snippet.read(), config.get('Database', 'snippet_id')))
+                conn.commit()
+                conn.close()
 
 @task
 def db_setup():
