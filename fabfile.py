@@ -1,23 +1,26 @@
 # TODO: Determine how to organize code
 # TODO: Figure out a better way to edit the DB
 
+import base64
 import ConfigParser
 import os
+import pystache
 import select
 import sqlite3
 
 from fabric.decorators import task
 from glob import glob
 from os.path import isfile
-from string import Template
 
 BUILD_DIR = 'build'
 BUILD_JS_FILE = BUILD_DIR + '/compiled.min.js'
 BUILD_CSS_FILE = BUILD_DIR + '/compiled.css'
+BUILD_CONTENT_FILE = BUILD_DIR + '/compiled.html'
 BUILD_OUT_FILE = BUILD_DIR + '/snippet.html'
 
 SCRIPTS_DIR = 'scripts'
 CSS_DIR = 'css'
+IMAGES_DIR = 'images'
 
 SNIPPET_TEMPLATE_FILE = 'snippet_template.html'
 SNIPPET_CONTENT_FILE = 'content.html'
@@ -196,6 +199,7 @@ def _test_sqlite3_db(db_path):
 def build_all():
     combine_js()
     combine_css()
+    build_content()
     build_snippet()
 
 
@@ -226,29 +230,61 @@ def _combine_files(glob_mask, combined_file_name):
 
 
 @task
+def build_content():
+    with open(BUILD_CONTENT_FILE, 'w') as f:
+        f.write(ContentView().render())
+
+
+@task
 def build_snippet():
     """
     Combines the compiled JS, CSS, and content into the template and outputs
     the result.
     """
-
-    js_file = open(BUILD_JS_FILE, 'r')
-    css_file = open(BUILD_CSS_FILE, 'r')
-    template_file = open(SNIPPET_TEMPLATE_FILE, 'r')
-    content_file = open(SNIPPET_CONTENT_FILE, 'r')
-
-    template = Template(template_file.read())
-    compiled = template.substitute({
-        'css': css_file.read(),
-        'js': js_file.read(),
-        'content': content_file.read()
+    template = SnippetView({
+        'css': BUILD_CSS_FILE,
+        'js': BUILD_JS_FILE,
+        'content': BUILD_CONTENT_FILE
     })
 
-    content_file.close()
-    template_file.close()
-    css_file.close()
-    js_file.close()
+    with open(BUILD_OUT_FILE, 'w') as output:
+        output.write(template.render())
 
-    output_file = open(BUILD_OUT_FILE, 'w')
-    output_file.write(compiled)
-    output_file.close()
+
+class SnippetView(pystache.View):
+    template_file = SNIPPET_TEMPLATE_FILE
+
+    def __init__(self, filenames):
+        super(SnippetView, self).__init__()
+        self._filenames = filenames
+
+    def __getattr__(self, item):
+        try:
+            return self._loadfile(item)
+        except KeyError:
+            raise AttributeError
+
+    def _loadfile(self, key):
+        with open(self._filenames[key], 'r') as f:
+            return f.read()
+
+
+class ContentView(pystache.View):
+    template_file = SNIPPET_CONTENT_FILE
+
+    def base64img(self, text=None):
+        return self._base64img
+
+    def _base64img(self, text=''):
+        filename = text.strip()
+        if filename.endswith('png'):
+            mimetype = 'image/png'
+        elif filename.endswith(('jpg', 'jpeg')):
+            mimetype = 'image/jpeg'
+        else:
+            return ''
+
+        with open(IMAGES_DIR + '/' + filename, 'r') as f:
+            data = base64.encodestring(f.read())
+
+        return 'data:%s;base64,%s' % (mimetype, data)
