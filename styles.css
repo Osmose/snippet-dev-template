@@ -1,0 +1,35 @@
+#flicks-video-message,
+#flicks-video {
+    -moz-transition: 400ms ease-in-out;
+}
+
+#flicks-video {
+    box-shadow: 0 1px 0 rgba(255,255,255,.8) inset,
+                0 -2px 0 rgba(0,0,0,.1) inset,
+                0 0 10px rgba(255,255,255,.5) inset,
+                0 0 0 1px rgba(0,0,0,.1),
+                0 2px 4px rgba(0,0,0,.2);
+    margin: 8px auto;
+    opacity: 1;
+    width: 100%;
+}
+
+#flicks-video-message.hidden {
+    opacity: 0;
+}
+
+#flicks-video.hidden {
+    height: 1px;
+    margin: 0;
+    opacity: 0;
+    width: 1px;
+}
+
+#flicks-video-play {
+    color: -moz-nativehyperlinktext;
+    cursor: pointer;
+}
+
+#flicks-video-snippet {
+    position: relative;
+}

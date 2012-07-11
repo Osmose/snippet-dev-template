@@ -1,95 +1,61 @@
-# TODO: Determine how to organize code
 # TODO: Figure out a better way to edit the DB
 
 import base64
 import ConfigParser
 import os
-import pystache
-import select
-import sqlite3
-
-from fabric.decorators import task
-from glob import glob
+import time
 from os.path import isfile
 
-BUILD_DIR = 'build'
-BUILD_JS_FILE = BUILD_DIR + '/compiled.min.js'
-BUILD_CSS_FILE = BUILD_DIR + '/compiled.css'
-BUILD_CONTENT_FILE = BUILD_DIR + '/compiled.html'
-BUILD_OUT_FILE = BUILD_DIR + '/snippet.html'
+import pystache
+import sqlite3
+from fabric.decorators import task
+from watchdog.events import PatternMatchingEventHandler
+from watchdog.observers import Observer
 
-SCRIPTS_DIR = 'scripts'
-CSS_DIR = 'css'
+
+BUILD_OUT_FILE = 'build.html'
 IMAGES_DIR = 'images'
-
-SNIPPET_TEMPLATE_FILE = 'snippet_template.html'
 SNIPPET_CONTENT_FILE = 'content.html'
+JS_FILE = 'script.js'
+CSS_FILE = 'styles.css'
+
+IGNORE_PATTERNS = (BUILD_OUT_FILE, '.gitignore', 'fabfile.py', 'README.md',
+                   'requirements.txt', 'LICENSE')
+IGNORE_PATTERNS = ['*{0}'.format(filename) for filename in IGNORE_PATTERNS]
 
 config = ConfigParser.ConfigParser()
 config.read('.snippetconfig')
 database_present = config.has_section('Database')
 
 
-@task
-def monitor_build_push():
-    """
-    Monitors the current directory for changes and pushes when they happen
-    """
+class MonitorBuildPushEventHandler(PatternMatchingEventHandler):
+    def on_any_event(self, event):
+        """Runs the build_push_all task when any filesystem event occurs."""
+        print "Files have changed, pushing..."
+        build()
+        push()
 
-    monitor = DirectoryMonitor('./')
+
+@task
+def monitor():
+    """
+    Monitors the current directory for changes and pushes when they happen.
+    """
+    observer = Observer()
+    handler = MonitorBuildPushEventHandler(ignore_patterns=IGNORE_PATTERNS)
+    observer.schedule(handler, '.', recursive=True)
     print "Monitoring for changes..."
-
-    while True:
-        if monitor.is_directory_changed():
-            print "Change detected, pushing..."
-            build_all_push()
-
-
-class DirectoryMonitor:
-    def __init__(self, path):
-        directories = os.walk(path)
-
-        self.kitems = []
-        self.kq = select.kqueue()
-        for d in directories:
-            # Ignore .git and the like
-            # TODO: Handle embedded dot directories
-            if d[0].startswith('./.'):
-                continue
-
-            # Setup kqueue for monitoring
-            directory = os.open(d[0], os.O_RDONLY)
-            ke = select.kevent(directory, filter=select.KQ_FILTER_VNODE,
-                               flags=select.KQ_EV_ADD | select.KQ_EV_ENABLE |
-                               select.KQ_EV_CLEAR,
-                               fflags=select.KQ_NOTE_DELETE |
-                               select.KQ_NOTE_WRITE)
-            self.kq.control([ke], 0, None)
-            self.kitems.append((ke, directory))
-
-    def __del__(self):
-        for (ke, directory) in self.kitems:
-            directory.close()
-
-    def is_directory_changed(self):
-        for (ke, directory) in self.kitems:
-            raised_events = self.kq.control([ke], 1, None)
-            for event in raised_events:
-                if event.fflags & (select.KQ_NOTE_DELETE |
-                                   select.KQ_NOTE_WRITE):
-                    return True
-
-        return False
+    observer.start()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        observer.stop()
+    observer.join()
 
 
 @task
-def build_all_push():
-    build_all()
-    push_to_db()
-
-
-@task
-def push_to_db():
+def push():
     """
     Checks for database configuration info and pushes the last built snippet
     to the specified database
@@ -114,8 +80,13 @@ def db_setup():
     if not config.has_section('Database'):
         config.add_section('Database')
 
-    db_path = raw_input('Enter the absolute path to the sqlite '
-                        'database file: ')
+    if 'HOMESNIPPETS_DATABASE' in os.environ:
+        print ('Using path from HOMESNIPPETS_DATABASE: {0}'
+               .format(os.environ['HOMESNIPPETS_DATABASE']))
+        db_path = os.environ['HOMESNIPPETS_DATABASE']
+    else:
+        db_path = raw_input('Enter the absolute path to the sqlite '
+                            'database file: ')
 
     while not _test_sqlite3_db(db_path):
         db_path = raw_input('Error validating database. Enter absolute path'
@@ -125,23 +96,27 @@ def db_setup():
 
     config.set('Database', 'db_path', db_path)
 
+    # Get name to use for snippet.
+    name = raw_input('Please enter the product name you will use to view this '
+                     'snippet (i.e. flicks_video):')
+
     # Set up snippet to push to
     conn = sqlite3.connect(db_path)
 
-    # Create Snippet
+    # Create client rule
     conn.execute("""
-        INSERT INTO homesnippets_clientmatchrule (description, exclude,
+        INSERT INTO homesnippets_clientmatchrule (description, name, exclude,
                                                   created, modified)
-        VALUES ('Matches Anything', 0, datetime('now'), datetime('now'))
-    """)
+        VALUES (?, ?, 0, datetime('now'), datetime('now'))
+    """, ['Name: {0}'.format(name), name])
     client_rule_id = _get_last_insert_rowid(conn)
 
-    # Create client rule
+    # Create snippet
     conn.execute("""
         INSERT INTO homesnippets_snippet (name, body, disabled, preview,
                                            created, modified)
         VALUES (?, '', 0, 0, datetime('now'), datetime('now'))
-    """, ('Autogenerated Snippet',))
+    """, (name,))
     snippet_id = _get_last_insert_rowid(conn)
 
     # Associate snippet with rule
@@ -160,6 +135,7 @@ def db_setup():
     # TODO: Handle failure better
     with open('.snippetconfig', 'w') as f:
         config.write(f)
+    print ''
 
 
 def _get_last_insert_rowid(conn):
@@ -196,55 +172,12 @@ def _test_sqlite3_db(db_path):
 
 
 @task
-def build_all():
-    combine_js()
-    combine_css()
-    build_content()
-    build_snippet()
-
-
-@task
-def combine_js():
-    """Combines every .js file in the SCRIPTS_DIR into one script."""
-
-    _combine_files(SCRIPTS_DIR + '/*.js', BUILD_JS_FILE)
-
-
-@task
-def combine_css():
-    """Combines every .css file in the CSS_DIR into one file."""
-
-    _combine_files(CSS_DIR + '/*.css', BUILD_CSS_FILE)
-
-
-def _combine_files(glob_mask, combined_file_name):
-    """Combines all files that match glob_mask into one file."""
-
-    files = []
-    for file in glob(glob_mask):
-        with open(file, 'r') as f:
-            files.append(f.read())
-
-    with open(combined_file_name, 'w') as f:
-        f.write('\n'.join(files))
-
-
-@task
-def build_content():
-    with open(BUILD_CONTENT_FILE, 'w') as f:
-        f.write(ContentView().render())
-
-
-@task
-def build_snippet():
-    """
-    Combines the compiled JS, CSS, and content into the template and outputs
-    the result.
-    """
+def build():
+    """Builds the snippet."""
     template = SnippetView({
-        'css': BUILD_CSS_FILE,
-        'js': BUILD_JS_FILE,
-        'content': BUILD_CONTENT_FILE
+        'css': CSS_FILE,
+        'js': JS_FILE,
+        'content': SNIPPET_CONTENT_FILE
     })
 
     with open(BUILD_OUT_FILE, 'w') as output:
@@ -252,7 +185,7 @@ def build_snippet():
 
 
 class SnippetView(pystache.View):
-    template_file = SNIPPET_TEMPLATE_FILE
+    template_file = SNIPPET_CONTENT_FILE
 
     def __init__(self, filenames):
         super(SnippetView, self).__init__()
@@ -267,10 +200,6 @@ class SnippetView(pystache.View):
     def _loadfile(self, key):
         with open(self._filenames[key], 'r') as f:
             return f.read()
-
-
-class ContentView(pystache.View):
-    template_file = SNIPPET_CONTENT_FILE
 
     def base64img(self, text=None):
         return self._base64img

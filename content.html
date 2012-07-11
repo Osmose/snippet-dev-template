@@ -1,1 +1,23 @@
-<!-- Snippet HTML Goes Here -->
+<div id='flicks-video-snippet' class="snippet">
+  <style>
+{{& css}}
+  </style>
+
+  <div id="flicks-video-message">
+    <img class="icon" src="{{#base64img}}addons.png{{/base64img}}" />
+    <p>
+      As <a href="https://firefoxflicks.mozilla.org">global video contest</a> to
+      tell our story &#x2014; Firefox Flicks.
+      <span id="flicks-video-play">Click to play a winning video!</span>
+    </p>
+  </div>
+  <video id="flicks-video" class="hidden" controls="controls" preload="none">
+    <source src="https://dl.dropbox.com/u/12343904/mozilla/flicks/snippet_videos/weird_things.webm" type="video/webm"/>
+  </video>
+
+  <script>
+  //<![CDATA[
+{{& js}}
+  //]]>
+  </script>
+</div>
