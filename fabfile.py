@@ -5,6 +5,7 @@ import ConfigParser
 import os
 import time
 from os.path import isfile
+from subprocess import CalledProcessError, check_output
 
 import pystache
 import sqlite3
@@ -18,6 +19,9 @@ IMAGES_DIR = 'images'
 SNIPPET_CONTENT_FILE = 'content.html'
 JS_FILE = 'script.js'
 CSS_FILE = 'styles.css'
+LESS_FILE = 'styles.less'
+
+LESS_BIN = os.environ.get('LESS_BIN', 'lessc')
 
 IGNORE_PATTERNS = (BUILD_OUT_FILE, '.gitignore', 'fabfile.py', 'README.md',
                    'requirements.txt', 'LICENSE')
@@ -174,8 +178,13 @@ def _test_sqlite3_db(db_path):
 @task
 def build():
     """Builds the snippet."""
+    # Use the LESS file over the CSS file if it exists.
+    css = CSS_FILE
+    if os.path.isfile(LESS_FILE):
+        css = LESS_FILE
+
     template = SnippetView({
-        'css': CSS_FILE,
+        'css': css,
         'js': JS_FILE,
         'content': SNIPPET_CONTENT_FILE
     })
@@ -198,8 +207,20 @@ class SnippetView(pystache.View):
             raise AttributeError
 
     def _loadfile(self, key):
-        with open(self._filenames[key], 'r') as f:
-            return f.read()
+        filename = self._filenames[key]
+
+        # Handle files that need preprocessing.
+        if filename.endswith('less'):
+            args = [LESS_BIN, '-x', filename]
+            try:
+                return check_output(args)
+            except CalledProcessError, e:
+                print 'Error compiling %s with command `%s`:' % (filename, args)
+                print e.output
+                print 'File will be ignored.'
+        else:
+            with open(filename, 'r') as f:
+                return f.read()
 
     def base64img(self, text=None):
         return self._base64img
