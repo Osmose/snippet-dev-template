@@ -16,11 +16,12 @@ development.
 
 1. `git clone git://github.com/Osmose/snippet-dev-template.git`
 2. `cd snippet-dev-template`
-  * (Optional) If you don't have Pystache or Fabric installed, or are running
-    inside of a virtualenv,  run `pip install -r requirements.txt`
-3. Create your snippet.
+3. `pip install -r requirements.txt`
+4. Create your snippet.
    * HTML goes in `content.html`
    * CSS in `styles.css`
+     * You can also create `styles.less` and use LESS CSS if you have the
+       `lessc` command installed.
    * Javascript in `script.js`
    * Images in `images/` (See 'Using Images' below)
 4. `fab build`
@@ -50,12 +51,10 @@ create a new snippet and hook up your database.
 
 ## Using Images
 
-Any images placed in the `images/` directory can be automatically embedded using data URIs into your content.html file:
+You can embed images into your snippet using data URIs with the `base64img` function in `content.html`:
 
-```
-content.html:
-
-<img src="{{#base64img}}some_image.png{{/base64img}}" />
+```jinja2
+<img src="{{ base64img('images/some_image.png') }}" />
 ```
 
 The result of the code above embeds `images/some_image.png` into an `<img>` tag in the snippet using base64 data URI encoding.

@@ -1,3 +1,4 @@
 Fabric>=1.1.1
-pystache>=0.3.1
+jinja2
+slimit
 watchdog
