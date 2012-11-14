@@ -1,3 +1,10 @@
+# Moved!
+
+This repo has been moved into the [snippet-utils][] repo. This repo will no
+longer be maintained (but will still exist because cool URIs don't change)!
+
+[snippet-utils]: https://github.com/Osmose/snippet-utils
+
 # about:home Snippet Template
 
 A template project layout to help jump-start Firefox about:home snippet
@@ -18,7 +25,7 @@ development.
 2. `cd snippet-dev-template`
 3. `pip install -r requirements.txt`
 4. Create your snippet.
-   * HTML goes in `content.html`
+   * HTML goes in `content.html`. This is parsed using Jinja2.
    * CSS in `styles.css`
      * You can also create `styles.less` and use LESS CSS if you have the
        `lessc` command installed.
